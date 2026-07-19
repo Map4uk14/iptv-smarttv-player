@@ -15,6 +15,8 @@ for the research the design is based on.
 | EPG cache in IndexedDB, settings in localStorage | Done |
 | Full guide grid (time × channel) | Done — virtualized on both axes |
 | Catchup / replay from the guide | Done — verified against the live server |
+| Transport controls: seek, skip, jump to live | Done — server honours seeks with 0s drift |
+| Pause live TV with timeshift resume | Done |
 | Subtitles / multiple audio tracks | Not started — needs a real TV to develop against |
 | Multiple playlists, settings screen | Not started |
 | VOD / Series browsing | Not started (this provider has none) |
@@ -41,6 +43,28 @@ In the guide: ◀▶ steps programme by programme, ▲▼ changes channel holdin
 place in time, CH± jumps 5 channels. A **⟲** badge marks programmes still inside
 the 7-day archive — press OK on one to replay it. Programmes that have aired but
 fallen out of the archive are dimmed, so it is clear before you press anything.
+
+### While watching
+
+| Key | Action |
+|---|---|
+| OK | Show transport controls; again to play/pause |
+| ◀▶ | Skip 30s (hold to scrub — the seek lands when you stop) |
+| ⏪ ⏩ | Skip 5 minutes |
+| ❚❚ / ▶ | Pause — see below |
+| **Blue** / ■ | Jump back to live |
+| ▲▼ | Change channel (always returns to live) |
+| Back | Close controls, then return to the channel list |
+
+**Pause works like a DVR.** On a channel with an archive, pausing a live stream
+records the moment, and resuming continues from there rather than snapping back
+to live — you keep whatever you missed. The offset from live is shown while you
+are behind it. On channels without an archive, seeking and timeshift are
+unavailable and the controls say so instead of failing silently.
+
+Seeks are committed on a short debounce rather than per keypress, because each
+one re-requests the stream and this provider allows only two concurrent
+connections.
 
 ## Layout
 
