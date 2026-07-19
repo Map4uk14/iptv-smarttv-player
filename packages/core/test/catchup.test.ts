@@ -7,8 +7,11 @@ import { parseM3u } from "../src/playlist/parseM3u.ts";
 import {
   buildCatchupUrl,
   isWithinArchive,
+  archiveRange,
+  clampToArchive,
   verifyCatchupResponse,
   CatchupUnavailableError,
+  LIVE_EDGE_MARGIN_SECONDS,
 } from "../src/catchup/buildUrl.ts";
 import type { Channel } from "../src/playlist/types.ts";
 
@@ -86,6 +89,40 @@ describe("catchup URL derivation", () => {
       nowSeconds: NOW,
     });
     assert.equal(url, `http://h/dvr?id=pervyj&s=${start}&e=${start + 1800}`);
+  });
+});
+
+describe("seekable archive window", () => {
+  const channel = parseM3u(fixture).channels[0]!;
+
+  test("spans exactly the advertised catchup-days", () => {
+    const range = archiveRange(channel.catchup, NOW)!;
+    assert.equal(range.end, NOW);
+    assert.equal(range.start, NOW - 7 * 86400);
+  });
+
+  test("is null when the channel has no archive", () => {
+    assert.equal(archiveRange(undefined, NOW), null);
+    assert.equal(archiveRange({ type: "shift", days: 0 }, NOW), null);
+  });
+
+  test("clamps a seek past the live edge back behind it", () => {
+    // Seeking to exactly "now" requests segments the server has not finished
+    // writing, which stalls instead of playing.
+    const clamped = clampToArchive(channel.catchup, NOW + 3600, NOW);
+    assert.equal(clamped, NOW - LIVE_EDGE_MARGIN_SECONDS);
+  });
+
+  test("clamps a seek older than the window to the window start", () => {
+    assert.equal(clampToArchive(channel.catchup, NOW - 30 * 86400, NOW), NOW - 7 * 86400);
+  });
+
+  test("passes through a position inside the window", () => {
+    assert.equal(clampToArchive(channel.catchup, NOW - 3600, NOW), NOW - 3600);
+  });
+
+  test("returns null for a channel with no archive, so callers cannot seek", () => {
+    assert.equal(clampToArchive(undefined, NOW - 60, NOW), null);
   });
 });
 

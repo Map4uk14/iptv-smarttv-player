@@ -48,6 +48,62 @@ export function isWithinArchive(catchup: CatchupInfo | undefined, startSeconds: 
   return startSeconds >= nowSeconds - catchup.days * 86400;
 }
 
+export interface ArchiveRange {
+  /** Oldest reachable moment, epoch seconds. */
+  readonly start: number;
+  /** Live edge, epoch seconds. */
+  readonly end: number;
+}
+
+/**
+ * The seekable window for a channel, or null when it has no archive.
+ *
+ * This is what a scrub bar spans. Deriving it from the advertised
+ * `catchup-days` rather than from the EPG matters: the guide may hold 22 days
+ * of listings while only 7 days are actually retrievable, and letting the user
+ * scrub into the other 15 would produce a stream that plays the wrong content.
+ */
+export function archiveRange(
+  catchup: CatchupInfo | undefined,
+  nowSeconds: number,
+): ArchiveRange | null {
+  if (!catchup || catchup.days <= 0) return null;
+  return { start: nowSeconds - catchup.days * 86400, end: nowSeconds };
+}
+
+/**
+ * Margin held back from the live edge when seeking.
+ *
+ * Seeking too close to "now" returns a manifest with almost nothing in it —
+ * the server has not finished writing those segments yet. Measured against the
+ * reference provider (5-second segments), by how many segments came back:
+ *
+ *   10s behind live -> 1 segment   (~5s of video: stalls immediately)
+ *   20s behind live -> 3 segments
+ *   40s behind live -> 4 segments
+ *  120s behind live -> 4 segments
+ *
+ * Every one of those honoured the requested time exactly (0s drift), so this
+ * is purely about starting with enough buffer to play smoothly. 30s sits above
+ * the point where the window stops being starved.
+ *
+ * Callers wanting the live edge should switch to the live URL, not seek near it.
+ */
+export const LIVE_EDGE_MARGIN_SECONDS = 30;
+
+export function clampToArchive(
+  catchup: CatchupInfo | undefined,
+  requestedSeconds: number,
+  nowSeconds: number,
+): number | null {
+  const range = archiveRange(catchup, nowSeconds);
+  if (!range) return null;
+  const latest = range.end - LIVE_EDGE_MARGIN_SECONDS;
+  if (requestedSeconds >= latest) return latest;
+  if (requestedSeconds < range.start) return range.start;
+  return requestedSeconds;
+}
+
 export function buildCatchupUrl(req: CatchupRequest): string {
   const { channel, startSeconds, durationSeconds, nowSeconds } = req;
   const catchup = channel.catchup;
