@@ -25,11 +25,14 @@ import {
   adjacentProgramme,
   firstProgrammeFrom,
   nowAndNext,
+  programmeAt,
   type Programme,
 } from "../../../packages/core/src/epg/schedule.ts";
 import {
   buildCatchupUrl,
   isWithinArchive,
+  archiveRange,
+  clampToArchive,
   CatchupUnavailableError,
 } from "../../../packages/core/src/catchup/buildUrl.ts";
 
@@ -41,6 +44,7 @@ import { ChannelList, type NowNext } from "./ui/ChannelList.tsx";
 import { Sidebar, type GroupEntry } from "./ui/Sidebar.tsx";
 import { InfoBar } from "./ui/InfoBar.tsx";
 import { Guide, type GuideSelection } from "./ui/Guide.tsx";
+import { PlayerControls } from "./ui/PlayerControls.tsx";
 import { PLAYLIST_URL } from "./config.ts";
 
 type Screen = "loading" | "error" | "browse" | "watch" | "guide";
@@ -81,6 +85,12 @@ export function App() {
   });
   const [toast, setToast] = createSignal("");
 
+  // --- transport state ---------------------------------------------------
+  const [paused, setPaused] = createSignal(false);
+  const [showControls, setShowControls] = createSignal(false);
+  /** Scrub target while seeking, epoch seconds; null when not scrubbing. */
+  const [seekTarget, setSeekTarget] = createSignal<number | null>(null);
+
   const [status, setStatus] = createSignal<PlaybackStatus>({ state: "idle" });
   const [showInfo, setShowInfo] = createSignal(false);
   const [epgProgress, setEpgProgress] = createSignal<EpgProgress>({ state: "idle", programmes: 0 });
@@ -98,6 +108,10 @@ export function App() {
   let player: WebOSPlayer | null = null;
   let infoTimer: number | undefined;
   let toastTimer: number | undefined;
+  let controlsTimer: number | undefined;
+  let seekCommitTimer: number | undefined;
+  /** Wall clock at the moment the user paused a live stream. */
+  let pausedAtWallClock: number | null = null;
 
   const epg = new EpgService((progress) => setEpgProgress(progress));
 
@@ -207,6 +221,8 @@ export function App() {
       window.clearInterval(clock);
       if (infoTimer !== undefined) window.clearTimeout(infoTimer);
       if (toastTimer !== undefined) window.clearTimeout(toastTimer);
+      if (controlsTimer !== undefined) window.clearTimeout(controlsTimer);
+      if (seekCommitTimer !== undefined) window.clearTimeout(seekCommitTimer);
       epg.terminate();
       player?.dispose();
       player = null;
@@ -515,9 +531,24 @@ export function App() {
   function handleWatchKey(event: RemoteEvent): boolean {
     switch (event.key) {
       case "back":
-      case "ok":
+        // Back dismisses the controls first, so it is an undo rather than an
+        // exit when the user has them open.
+        if (showControls()) {
+          setShowControls(false);
+          setSeekTarget(null);
+          return true;
+        }
         setScreen("browse");
         syncSelectionToPlaying();
+        return true;
+      case "ok":
+        // OK opens transport controls rather than jumping to the channel list;
+        // while watching, the likely intent is to control playback.
+        if (showControls()) {
+          togglePause();
+        } else {
+          revealControls();
+        }
         return true;
       case "up":
       case "channelUp":
@@ -527,14 +558,31 @@ export function App() {
       case "channelDown":
         zap(1);
         return true;
+      case "left":
+        nudgeSeek(-30);
+        return true;
+      case "right":
+        nudgeSeek(30);
+        return true;
+      case "rewind":
+        nudgeSeek(-300);
+        return true;
+      case "forward":
+        nudgeSeek(300);
+        return true;
+      case "stop":
+        jumpToLive();
+        return true;
+      case "blue":
+        jumpToLive();
+        return true;
       case "info":
         revealInfo();
         return true;
       case "playpause":
       case "pause":
       case "play":
-        player?.togglePause();
-        revealInfo();
+        togglePause();
         return true;
       case "red":
         toggleFavourite();
@@ -589,7 +637,14 @@ export function App() {
   }
 
   function playLive(channel: Channel): void {
-    setSession({ channelId: channel.id, mode: "live" });
+    batch(() => {
+      setSession({ channelId: channel.id, mode: "live" });
+      // Any pending pause or scrub belongs to the previous stream.
+      setPaused(false);
+      setSeekTarget(null);
+      setMediaTime(0);
+    });
+    pausedAtWallClock = null;
     updateSettings({ lastChannelId: channel.id });
     revealInfo();
     player?.play(channel.url);
@@ -612,14 +667,20 @@ export function App() {
         durationSeconds: programme.stop - programme.start,
         nowSeconds: nowS,
       });
-      setSession({
-        channelId: channel.id,
-        mode: "catchup",
-        programme,
-        startedAt: programme.start,
+      batch(() => {
+        setSession({
+          channelId: channel.id,
+          mode: "catchup",
+          programme,
+          startedAt: programme.start,
+        });
+        setPaused(false);
+        setSeekTarget(null);
+        setMediaTime(0);
+        setScreen("watch");
       });
+      pausedAtWallClock = null;
       updateSettings({ lastChannelId: channel.id });
-      setScreen("watch");
       revealInfo();
       player?.play(url);
     } catch (error) {
@@ -653,6 +714,157 @@ export function App() {
     // Zapping always returns to live — carrying a catchup position across a
     // channel change has no meaning.
     playLive(channel);
+  }
+
+  // --- transport ----------------------------------------------------------
+
+  /**
+   * Seek to a wall-clock moment by re-requesting the stream from there.
+   *
+   * There is no client-side seek available: a live HLS manifest only exposes a
+   * short sliding window, so anything outside it must come from the server.
+   * `?utc=` returns a manifest starting at the requested time, which makes
+   * "seek" and "start catchup" the same operation.
+   */
+  function seekToWallClock(targetSeconds: number): void {
+    const channel = playingChannel();
+    if (!channel) return;
+
+    const nowS = Math.floor(Date.now() / 1000);
+    const clamped = clampToArchive(channel.catchup, targetSeconds, nowS);
+    if (clamped === null) {
+      showToast("This channel has no archive — seeking unavailable");
+      return;
+    }
+
+    // Landing within the live-edge margin means the user scrubbed to the
+    // present; give them the real live stream rather than an archive request
+    // for segments that barely exist yet.
+    if (clamped >= nowS - 30) {
+      jumpToLive();
+      return;
+    }
+
+    const schedule = channel.tvgId ? epg.get(channel.tvgId) : undefined;
+    const programme = schedule ? programmeAt(schedule, clamped) : undefined;
+
+    try {
+      const url = buildCatchupUrl({
+        channel,
+        startSeconds: clamped,
+        durationSeconds: programme ? programme.stop - clamped : 3600,
+        nowSeconds: nowS,
+      });
+      const next: PlaybackSession = programme
+        ? { channelId: channel.id, mode: "catchup", programme, startedAt: clamped }
+        : { channelId: channel.id, mode: "catchup", startedAt: clamped };
+      batch(() => {
+        setSession(next);
+        setPaused(false);
+        setMediaTime(0);
+      });
+      player?.play(url);
+    } catch (error) {
+      if (error instanceof CatchupUnavailableError) {
+        showToast(
+          error.reason === "outside-window"
+            ? `Outside the ${channel.catchup?.days ?? 0}-day archive`
+            : "Cannot seek there",
+        );
+        return;
+      }
+      showToast("Seek failed");
+      console.warn("[seek] failed:", error);
+    }
+  }
+
+  function jumpToLive(): void {
+    const channel = playingChannel();
+    if (!channel) return;
+    setPaused(false);
+    playLive(channel);
+    showToast("Live");
+  }
+
+  /**
+   * Move the scrub cursor without committing.
+   *
+   * Each committed seek re-requests the stream, and this provider allows only
+   * two concurrent connections, so holding ◀ must not fire a request per
+   * keypress. The cursor moves immediately for feedback; the seek lands after
+   * a short pause in input.
+   */
+  function nudgeSeek(deltaSeconds: number): void {
+    const channel = playingChannel();
+    if (!channel) return;
+    if (!archiveRange(channel.catchup, Math.floor(Date.now() / 1000))) {
+      showToast("This channel has no archive — seeking unavailable");
+      return;
+    }
+
+    revealControls();
+    const base = seekTarget() ?? playbackClock();
+    const nowS = Math.floor(Date.now() / 1000);
+    const clamped = clampToArchive(channel.catchup, base + deltaSeconds, nowS);
+    if (clamped === null) return;
+    setSeekTarget(clamped);
+
+    if (seekCommitTimer !== undefined) window.clearTimeout(seekCommitTimer);
+    seekCommitTimer = window.setTimeout(() => {
+      const target = seekTarget();
+      setSeekTarget(null);
+      if (target !== null) seekToWallClock(target);
+    }, 900);
+  }
+
+  /**
+   * Pause, with timeshift when the channel supports it.
+   *
+   * On a live stream, pausing and resuming normally snaps back to the live
+   * edge — the buffered window has moved on. Since this provider has a 7-day
+   * archive, we record the wall-clock moment of the pause and resume from it,
+   * which is what "pause live TV" means to a viewer.
+   */
+  function togglePause(): void {
+    const channel = playingChannel();
+    if (!channel) return;
+    revealControls();
+
+    if (!paused()) {
+      pausedAtWallClock = playbackClock();
+      setPaused(true);
+      player?.togglePause();
+      return;
+    }
+
+    setPaused(false);
+    const current = session();
+    const canTimeshift = archiveRange(channel.catchup, Math.floor(Date.now() / 1000)) !== null;
+
+    // Resuming a live stream after a pause of any length: re-request from the
+    // paused moment so the viewer continues where they stopped.
+    if (current?.mode === "live" && canTimeshift && pausedAtWallClock !== null) {
+      const behind = Math.floor(Date.now() / 1000) - pausedAtWallClock;
+      if (behind > 10) {
+        seekToWallClock(pausedAtWallClock);
+        showToast(`Resumed ${Math.round(behind / 60)} min behind live`);
+        pausedAtWallClock = null;
+        return;
+      }
+    }
+    // Archive playback pauses and resumes normally — the segments stay put.
+    player?.togglePause();
+    pausedAtWallClock = null;
+  }
+
+  function revealControls(): void {
+    setShowControls(true);
+    setShowInfo(false);
+    if (controlsTimer !== undefined) window.clearTimeout(controlsTimer);
+    controlsTimer = window.setTimeout(() => {
+      setShowControls(false);
+      setSeekTarget(null);
+    }, 6000);
   }
 
   function showToast(message: string): void {
@@ -827,7 +1039,20 @@ export function App() {
         </div>
       </Show>
 
-      <Show when={screen() === "watch" && showInfo()}>
+      <Show when={screen() === "watch" && showControls()}>
+        <PlayerControls
+          channel={playingChannel()}
+          programme={activeProgramme()}
+          position={playbackClock()}
+          seekTarget={seekTarget()}
+          paused={paused()}
+          live={session()?.mode === "live"}
+          seekDisabled={archiveRange(playingChannel()?.catchup, nowSeconds()) === null}
+          nowSeconds={nowSeconds()}
+        />
+      </Show>
+
+      <Show when={screen() === "watch" && showInfo() && !showControls()}>
         <InfoBar
           channel={playingChannel()}
           channelNumber={playingChannel()?.channelNumber ?? selected() + 1}
