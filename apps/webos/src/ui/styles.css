@@ -1,0 +1,800 @@
+/*
+ * TV styling rules that differ from desktop:
+ *  - Fixed 1920x1080 design space; the TV scales it. No responsive breakpoints.
+ *  - ~48px safe-area inset: many TVs overscan and would clip edge content.
+ *  - Large type. The viewer is ~3m away, not 60cm.
+ *  - No hover states. Focus must read from across a room, so the selected row
+ *    is a solid filled block rather than an outline.
+ *  - Transitions are transform/opacity/colour only. Anything that triggers
+ *    layout drops frames on this GPU.
+ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: #05070c;
+  color: #e8ecf4;
+  font-family: "LG Smart UI", "Helvetica Neue", Arial, sans-serif;
+  user-select: none;
+  cursor: none;
+}
+
+.app {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+}
+
+.muted {
+  color: #6b7689;
+}
+
+/* --- video ------------------------------------------------------------- */
+
+.video-host {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  /* Hidden, not unmounted: the element must outlive channel changes. */
+  visibility: hidden;
+}
+
+.video-host.active {
+  visibility: visible;
+}
+
+/* Darkens the video behind the browse panel so text stays legible over any
+   frame, without hiding what is playing. */
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(5, 7, 12, 0.97) 55%, rgba(5, 7, 12, 0.55) 100%);
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+  pointer-events: none;
+}
+
+.scrim.active {
+  opacity: 1;
+}
+
+/* --- generic states ---------------------------------------------------- */
+
+.centred {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  font-size: 32px;
+}
+
+.centred.error {
+  padding: 0 240px;
+  text-align: center;
+}
+
+.centred.error h1 {
+  font-size: 52px;
+  font-weight: 600;
+  color: #ff6b6b;
+}
+
+.error-detail {
+  font-size: 30px;
+  line-height: 1.5;
+  color: #b9c0cc;
+}
+
+.hint {
+  font-size: 26px;
+  color: #6b7689;
+}
+
+.empty {
+  padding: 64px;
+  font-size: 30px;
+  color: #6b7689;
+}
+
+.spinner {
+  width: 56px;
+  height: 56px;
+  border: 5px solid #1b2130;
+  border-top-color: #4c8dff;
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+.spinner.tiny {
+  width: 22px;
+  height: 22px;
+  border-width: 3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- browse layout ----------------------------------------------------- */
+
+.browse {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 44px 56px 32px;
+}
+
+.browse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.browse-title {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  font-size: 42px;
+  font-weight: 600;
+}
+
+.browse-count {
+  font-size: 24px;
+  color: #6b7689;
+  font-variant-numeric: tabular-nums;
+}
+
+.epg-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 22px;
+  color: #6b7689;
+}
+
+.epg-error {
+  color: #e0a34a;
+}
+
+.browse-body {
+  flex: 1;
+  display: flex;
+  gap: 28px;
+  min-height: 0;
+}
+
+.browse-footer {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-top: 16px;
+  font-size: 21px;
+  color: #6b7689;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.legend-dot {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+}
+
+.legend-dot.red {
+  background: #e5484d;
+}
+.legend-dot.green {
+  background: #46a758;
+}
+.legend-dot.yellow {
+  background: #ffb224;
+}
+.legend-dot.blue {
+  background: #4c8dff;
+}
+
+.legend-plain {
+  margin-left: auto;
+}
+
+/* --- sidebar ----------------------------------------------------------- */
+
+.sidebar {
+  width: 380px;
+  flex-shrink: 0;
+  overflow: hidden;
+  padding-right: 4px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 62px;
+  padding: 0 22px;
+  border-radius: 10px;
+  font-size: 26px;
+  color: #b9c0cc;
+  transition: background-color 120ms linear, color 120ms linear;
+}
+
+.sidebar-item.pinned {
+  color: #e8ecf4;
+}
+
+.sidebar-item.selected {
+  background: #4c8dff;
+  color: #fff;
+}
+
+/* Focus lives in the other column: keep the marker, drop the emphasis. */
+.sidebar-item.selected.inactive {
+  background: #1b2130;
+  color: #b9c0cc;
+}
+
+.sidebar-icon {
+  color: #ffb224;
+  font-size: 24px;
+}
+
+.sidebar-item.selected .sidebar-icon {
+  color: #fff;
+}
+
+.sidebar-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-count {
+  font-size: 20px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- channel list ------------------------------------------------------ */
+
+.browse-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-input {
+  height: 72px;
+  margin-bottom: 24px;
+  padding: 0 24px;
+  font-size: 30px;
+  font-family: inherit;
+  color: #e8ecf4;
+  background: #11172380;
+  border: 3px solid #4c8dff;
+  border-radius: 10px;
+  outline: none;
+}
+
+.channel-list {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+}
+
+.channel-list-inner {
+  position: relative;
+  /* Own layer, so scrolling never repaints rows. */
+  will-change: transform;
+}
+
+.channel-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 24px;
+  border-radius: 10px;
+  /* Colour only — animating geometry on a long list costs frames. */
+  transition: background-color 120ms linear;
+}
+
+.channel-row.selected {
+  background: #4c8dff;
+  color: #fff;
+}
+
+.channel-row.selected.inactive {
+  background: #1b2130;
+}
+
+.channel-number {
+  width: 62px;
+  font-size: 25px;
+  color: #6b7689;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.channel-row.selected .channel-number {
+  color: #d5e3ff;
+}
+
+.channel-logo {
+  width: 76px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.channel-logo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.channel-logo-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1b2130;
+  border-radius: 6px;
+  font-size: 19px;
+  color: #6b7689;
+}
+
+.channel-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.channel-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.channel-name {
+  font-size: 27px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-fav {
+  color: #ffb224;
+  font-size: 21px;
+}
+
+.channel-row.selected .channel-fav {
+  color: #fff;
+}
+
+.channel-programme {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 21px;
+  color: #8b95a7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-row.selected .channel-programme {
+  color: #d5e3ff;
+}
+
+.programme-time {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.programme-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-right {
+  width: 330px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.channel-next {
+  margin-top: 7px;
+  font-size: 19px;
+  color: #6b7689;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-row.selected .channel-next {
+  color: #d5e3ff;
+}
+
+.progress-track {
+  height: 5px;
+  background: #232b3b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-track.wide {
+  height: 8px;
+}
+
+.channel-row.selected .progress-track {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.progress-fill {
+  height: 100%;
+  background: #4c8dff;
+  border-radius: 3px;
+}
+
+.channel-row.selected .progress-fill {
+  background: #fff;
+}
+
+/* --- info bar ---------------------------------------------------------- */
+
+.infobar {
+  position: absolute;
+  left: 56px;
+  right: 56px;
+  bottom: 52px;
+  padding: 30px 36px;
+  background: rgba(5, 7, 12, 0.9);
+  border-radius: 14px;
+  animation: rise 180ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.infobar-head {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.infobar-number {
+  font-size: 46px;
+  font-weight: 600;
+  color: #4c8dff;
+  font-variant-numeric: tabular-nums;
+  min-width: 76px;
+}
+
+.infobar-logo {
+  width: 92px;
+  height: 58px;
+  object-fit: contain;
+}
+
+.infobar-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.infobar-channel {
+  font-size: 38px;
+  font-weight: 600;
+}
+
+.infobar-programme {
+  margin-top: 6px;
+  font-size: 26px;
+  color: #b9c0cc;
+}
+
+.infobar-clock {
+  font-size: 34px;
+  color: #b9c0cc;
+  font-variant-numeric: tabular-nums;
+}
+
+.infobar-progress {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.infobar-progress .progress-track {
+  flex: 1;
+}
+
+.infobar-remaining {
+  font-size: 21px;
+  color: #6b7689;
+  white-space: nowrap;
+}
+
+.infobar-desc {
+  margin-top: 16px;
+  font-size: 22px;
+  line-height: 1.45;
+  color: #8b95a7;
+  /* Two lines maximum: the info bar is an orientation aid, not a reading pane. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.infobar-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 18px;
+  font-size: 21px;
+  color: #6b7689;
+}
+
+/* --- guide grid -------------------------------------------------------- */
+
+.guide-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 44px 56px 32px;
+  background: rgba(5, 7, 12, 0.97);
+}
+
+.guide {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.guide-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 46px;
+  margin-bottom: 10px;
+}
+
+.guide-daylabel {
+  position: absolute;
+  left: 0;
+  width: 330px;
+  font-size: 24px;
+  font-weight: 600;
+  color: #b9c0cc;
+}
+
+.guide-ticks {
+  position: relative;
+  height: 100%;
+}
+
+.guide-tick {
+  position: absolute;
+  top: 8px;
+  font-size: 21px;
+  color: #6b7689;
+  font-variant-numeric: tabular-nums;
+  border-left: 2px solid #232b3b;
+  padding-left: 10px;
+  height: 30px;
+}
+
+.guide-body {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+}
+
+.guide-scroll {
+  position: relative;
+  will-change: transform;
+}
+
+/* Drawn once over the whole grid rather than per row. */
+.guide-nowline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #e5484d;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.guide-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.guide-row.current .guide-channel {
+  background: #1b2130;
+}
+
+.guide-channel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  border-radius: 8px;
+  margin-right: 8px;
+}
+
+.guide-channel-number {
+  width: 46px;
+  font-size: 21px;
+  color: #6b7689;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.guide-channel-logo {
+  width: 56px;
+  height: 36px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.guide-channel-logo-fallback {
+  width: 56px;
+  height: 36px;
+  background: #1b2130;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.guide-channel-name {
+  flex: 1;
+  font-size: 23px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.guide-channel-fav {
+  color: #ffb224;
+  font-size: 18px;
+}
+
+.guide-track {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.guide-nodata {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  color: #3d4657;
+}
+
+.guide-programme {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  padding: 9px 14px;
+  background: #141a26;
+  border-radius: 7px;
+  overflow: hidden;
+  transition: background-color 120ms linear;
+}
+
+/* Aired and unavailable: recede, so the eye skips them. */
+.guide-programme.past {
+  background: #0d1220;
+  color: #5c6679;
+}
+
+/* Aired but replayable: keep it legible and mark it. */
+.guide-programme.archived {
+  background: #16203a;
+  color: #a9b4c7;
+}
+
+.guide-programme.selected {
+  background: #4c8dff;
+  color: #fff;
+  z-index: 2;
+}
+
+.guide-programme-title {
+  font-size: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.guide-programme-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 18px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.guide-archive-badge {
+  color: #ffb224;
+}
+
+.guide-programme.selected .guide-archive-badge {
+  color: #fff;
+}
+
+/* --- misc -------------------------------------------------------------- */
+
+.infobar-badge {
+  margin-left: 16px;
+  padding: 4px 14px;
+  font-size: 21px;
+  font-weight: 500;
+  color: #ffb224;
+  background: rgba(255, 178, 36, 0.14);
+  border-radius: 20px;
+  vertical-align: middle;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  padding: 20px 38px;
+  font-size: 26px;
+  background: rgba(20, 26, 38, 0.96);
+  border-radius: 30px;
+  animation: rise 160ms ease-out;
+  z-index: 10;
+}
+
+/* Missing upstream data reads as a deliberate statement, not a blank gap. */
+.infobar-desc.empty {
+  color: #4a5365;
+  font-style: italic;
+}
