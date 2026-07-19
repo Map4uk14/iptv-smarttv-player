@@ -1,0 +1,17 @@
+{
+  "id": "com.mark.iptv",
+  "version": "0.1.0",
+  "vendor": "Mark",
+  "type": "web",
+  "main": "index.html",
+  "title": "IPTV",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "appDescription": "Fast IPTV player",
+  "bgColor": "#0b0e14",
+  "iconColor": "#4c8dff",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "supportPortraitMode": false,
+  "requiredMemory": 200
+}

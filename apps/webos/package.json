@@ -1,0 +1,27 @@
+{
+  "name": "@iptv/webos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "icons": "node scripts/make-icons.mjs",
+    "check-bundle": "node scripts/check-bundle.mjs",
+    "package": "npm run build && npm run icons && npm run check-bundle && ares-package dist -o out",
+    "install-tv": "ares-install -d tv out/com.mark.iptv_0.1.0_all.ipk",
+    "launch-tv": "ares-launch -d tv com.mark.iptv",
+    "deploy": "npm run package && npm run install-tv && npm run launch-tv"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.3"
+  },
+  "devDependencies": {
+    "@webos-tools/cli": "^3.2.5",
+    "hls.js": "^1.6.16",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}
