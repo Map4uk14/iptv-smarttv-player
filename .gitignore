@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+.scratch/
+*.log
+
+# Playlist URLs embed a subscription token — never commit one.
+.env.local
+
+# Local tooling configuration, kept out of the public repository.
+CLAUDE.md

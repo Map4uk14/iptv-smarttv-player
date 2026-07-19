@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    // ES2017 is the floor: webOS 4.x ships Chromium 53. Anything newer in the
+    // emitted output (optional chaining, nullish coalescing) is a hard parse
+    // error on those sets, not a graceful degradation.
+    "target": "ES2017",
+    "lib": ["ES2017"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    // Relative imports carry explicit .ts extensions so Node's native
+    // type-stripping can resolve them without a build step; TS 5.7 rewrites
+    // them to .js on emit for bundler/tsc consumers.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true
+  }
+}
