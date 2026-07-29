@@ -64,7 +64,11 @@ export default defineConfig(({ mode }) => ({
   // the main bundle: a module worker is fetched with CORS semantics.
   worker: { format: "iife" },
   build: {
-    target: "es2017", // webOS 4.x is Chromium 53; see ARCHITECTURE.md
+    // esbuild takes it as far as it can; scripts/transpile-es5.mjs finishes the
+    // lowering to ES5 with Babel. esbuild cannot do it alone — it refuses to
+    // lower async/await below ES2017, and this app is async throughout.
+    // The reference TV rejects arrow functions outright, so ES5 is the ceiling.
+    target: "es2017",
     outDir: "dist",
     emptyOutDir: true,
     assetsInlineLimit: 0,

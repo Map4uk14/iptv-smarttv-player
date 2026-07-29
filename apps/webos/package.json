@@ -8,8 +8,9 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/make-icons.mjs",
+    "transpile": "node scripts/transpile-es5.mjs",
     "check-bundle": "node scripts/check-bundle.mjs",
-    "package": "npm run build && npm run icons && npm run check-bundle && ares-package dist -o out",
+    "package": "npm run build && npm run transpile && npm run icons && npm run check-bundle && ares-package dist -o out",
     "install-tv": "ares-install -d tv out/com.mark.iptv_0.1.0_all.ipk",
     "launch-tv": "ares-launch -d tv com.mark.iptv",
     "deploy": "npm run package && npm run install-tv && npm run launch-tv"
@@ -18,10 +19,18 @@
     "solid-js": "^1.9.3"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@vitejs/plugin-legacy": "^6.1.1",
     "@webos-tools/cli": "^3.2.5",
+    "acorn": "^8.18.0",
+    "core-js": "^3.49.0",
     "hls.js": "^1.6.16",
+    "regenerator-runtime": "^0.14.1",
+    "terser": "^5.49.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
-    "vite-plugin-solid": "^2.11.0"
+    "vite-plugin-solid": "^2.11.0",
+    "whatwg-fetch": "^3.6.20"
   }
 }
