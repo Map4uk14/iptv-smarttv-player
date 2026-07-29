@@ -15,6 +15,45 @@
   box-sizing: border-box;
 }
 
+/*
+ * Flex spacing, written as margins.
+ *
+ * `gap` in a flex container is Chromium 84; the target TV is Chromium 38,
+ * where it is dropped silently and every row collapses into its neighbour.
+ * `> * + *` is the same rule expressed in CSS that predates it.
+ *
+ * These sit here rather than at the end of the file on purpose: they carry
+ * the same specificity as the component rules below, so anything setting
+ * its own margin later (.legend-plain pushing right with `auto`) still wins.
+ */
+.centred > * + * { margin-top: 24px; }
+.epg-status > * + * { margin-left: 12px; }
+.browse-body > * + * { margin-left: 28px; }
+.browse-footer > * + * { margin-left: 32px; }
+.sidebar-item > * + * { margin-left: 12px; }
+.channel-row > * + * { margin-left: 22px; }
+.channel-line > * + * { margin-left: 10px; }
+.channel-programme > * + * { margin-left: 12px; }
+.infobar-head > * + * { margin-left: 24px; }
+.infobar-progress > * + * { margin-left: 20px; }
+.guide-channel > * + * { margin-left: 12px; }
+.controls-state > * + * { margin-left: 18px; }
+.controls-programme > * + * { margin-left: 16px; }
+.controls-bar > * + * { margin-left: 20px; }
+.controls-hints > * + * { margin-left: 30px; }
+
+/*
+ * Four containers put a bare text node next to an element — "All channels" then
+ * the count, a coloured dot then its label. `* + *` matches elements only, so
+ * the sole element is also the first and the rule never fires. These carry the
+ * spacing on the element itself instead; the `> * + *` form is omitted above
+ * for them rather than left in as a no-op.
+ */
+.browse-count { margin-left: 18px; }
+.legend-dot { margin-right: 9px; }
+.guide-archive-badge { margin-left: 8px; }
+
+
 html,
 body {
   width: 1920px;
@@ -41,7 +80,10 @@ body {
 
 .video-host {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: #000;
   /* Hidden, not unmounted: the element must outlive channel changes. */
   visibility: hidden;
@@ -55,7 +97,10 @@ body {
    frame, without hiding what is playing. */
 .scrim {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: linear-gradient(90deg, rgba(5, 7, 12, 0.97) 55%, rgba(5, 7, 12, 0.55) 100%);
   opacity: 0;
   transition: opacity 180ms ease-out;
@@ -70,12 +115,14 @@ body {
 
 .centred {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
   font-size: 32px;
 }
 
@@ -132,7 +179,10 @@ body {
 
 .browse {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
   padding: 44px 56px 32px;
@@ -148,7 +198,6 @@ body {
 .browse-title {
   display: flex;
   align-items: baseline;
-  gap: 18px;
   font-size: 42px;
   font-weight: 600;
 }
@@ -162,7 +211,6 @@ body {
 .epg-status {
   display: flex;
   align-items: center;
-  gap: 12px;
   font-size: 22px;
   color: #6b7689;
 }
@@ -174,14 +222,12 @@ body {
 .browse-body {
   flex: 1;
   display: flex;
-  gap: 28px;
   min-height: 0;
 }
 
 .browse-footer {
   display: flex;
   align-items: center;
-  gap: 32px;
   margin-top: 16px;
   font-size: 21px;
   color: #6b7689;
@@ -190,7 +236,6 @@ body {
 .legend {
   display: flex;
   align-items: center;
-  gap: 9px;
 }
 
 .legend-dot {
@@ -228,7 +273,6 @@ body {
 .sidebar-item {
   display: flex;
   align-items: center;
-  gap: 12px;
   height: 62px;
   padding: 0 22px;
   border-radius: 10px;
@@ -290,7 +334,7 @@ body {
   font-size: 30px;
   font-family: inherit;
   color: #e8ecf4;
-  background: #11172380;
+  background: rgba(17, 23, 35, 0.5);
   border: 3px solid #4c8dff;
   border-radius: 10px;
   outline: none;
@@ -314,7 +358,6 @@ body {
   right: 0;
   display: flex;
   align-items: center;
-  gap: 22px;
   padding: 0 24px;
   border-radius: 10px;
   /* Colour only — animating geometry on a long list costs frames. */
@@ -377,7 +420,6 @@ body {
 .channel-line {
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
 .channel-name {
@@ -398,7 +440,6 @@ body {
 
 .channel-programme {
   display: flex;
-  gap: 12px;
   margin-top: 4px;
   font-size: 21px;
   color: #8b95a7;
@@ -492,7 +533,6 @@ body {
 .infobar-head {
   display: flex;
   align-items: center;
-  gap: 24px;
 }
 
 .infobar-number {
@@ -534,7 +574,6 @@ body {
 .infobar-progress {
   display: flex;
   align-items: center;
-  gap: 20px;
   margin-top: 20px;
 }
 
@@ -572,7 +611,10 @@ body {
 
 .guide-screen {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
   padding: 44px 56px 32px;
@@ -656,7 +698,6 @@ body {
 .guide-channel {
   display: flex;
   align-items: center;
-  gap: 12px;
   flex-shrink: 0;
   padding: 0 16px;
   border-radius: 8px;
@@ -752,7 +793,6 @@ body {
 .guide-programme-time {
   display: flex;
   align-items: center;
-  gap: 8px;
   margin-top: 4px;
   font-size: 18px;
   opacity: 0.7;
@@ -821,7 +861,6 @@ body {
 .controls-state {
   display: flex;
   align-items: center;
-  gap: 18px;
 }
 
 .controls-icon {
@@ -850,7 +889,6 @@ body {
 .controls-programme {
   display: flex;
   align-items: baseline;
-  gap: 16px;
   margin-top: 8px;
   font-size: 24px;
   color: #b9c0cc;
@@ -865,7 +903,6 @@ body {
 .controls-bar {
   display: flex;
   align-items: center;
-  gap: 20px;
   margin-top: 20px;
 }
 
@@ -934,7 +971,6 @@ body {
 .controls-hints {
   display: flex;
   align-items: center;
-  gap: 30px;
   margin-top: 18px;
   font-size: 21px;
   color: #6b7689;
@@ -943,7 +979,6 @@ body {
 .controls-jump {
   display: flex;
   align-items: center;
-  gap: 9px;
 }
 
 .controls-warn {
