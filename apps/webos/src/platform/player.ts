@@ -107,7 +107,11 @@ export class WebOSPlayer {
     const video = document.createElement("video");
     video.autoplay = true;
     video.setAttribute("playsinline", "");
-    video.style.cssText = "position:absolute;inset:0;width:100%;height:100%;background:#000;object-fit:contain";
+    // Longhand offsets, not `inset`: that shorthand is Chromium 87 and the
+    // target engine is 38, where the whole declaration is dropped. Written from
+    // JS, so it never passes through the stylesheet or its checks.
+    video.style.cssText =
+      "position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;background:#000;object-fit:contain";
     container.appendChild(video);
     this.video = video;
 

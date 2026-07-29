@@ -91,27 +91,35 @@ for (const { name, body } of jsFiles) {
 //
 // Unlike the ES5 check above, this is a blocklist and carries that weakness
 // honestly: it only catches what is listed. Each entry is here because it was
-// actually found in this stylesheet, with the Chromium version that introduced
-// it. If layout breaks on the TV and this check is silent, suspect the list
-// before suspecting the CSS.
-const CSS_FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "ui", "styles.css");
+// actually found here, with the Chromium version that introduced it. If layout
+// breaks on the TV and this check is silent, suspect the list first.
+//
+// It scans the *built* bundle, not src/ui/styles.css. An earlier version read
+// the source and passed a build that shipped the opposite: esbuild's CSS
+// minifier assumes a modern browser and rewrote the four longhand offsets back
+// into `inset: 0`, so the stylesheet was correct at source and broken on the
+// TV. (`build.cssTarget` now stops that at the cause; this stops it shipping.)
+// Scanning the output also covers CSS written from JavaScript — the <video>
+// element's inline style, which no stylesheet check would ever see.
 const LEGACY_CSS = [
-  [/^\s*inset:/m, "inset (Chromium 87) — use top/right/bottom/left"],
-  [/^\s*(row-|column-)?gap:/m, "gap in flex (Chromium 84) — use margins"],
+  [/[;{"]inset:/, "inset (Chromium 87) — use top/right/bottom/left"],
+  [/[;{"](row-|column-)?gap:/, "gap in flex (Chromium 84) — use margins"],
   [/#[0-9a-fA-F]{8}\b/, "8-digit #RRGGBBAA hex (Chromium 62) — use rgba()"],
   [/display:\s*grid/, "CSS grid (Chromium 57)"],
   [/position:\s*sticky/, "position: sticky (Chromium 56)"],
   [/var\(--/, "custom properties (Chromium 49)"],
   [/aspect-ratio:/, "aspect-ratio (Chromium 88)"],
-  [/:\s*(clamp|min|max)\(/, "clamp()/min()/max() (Chromium 79)"],
+  [/[;{"](clamp|min|max)\(/, "clamp()/min()/max() (Chromium 79)"],
 ];
-if (existsSync(CSS_FILE)) {
-  const css = readFileSync(CSS_FILE, "utf8");
+for (const { name, body } of jsFiles) {
   for (const [pattern, label] of LEGACY_CSS) {
-    const hit = pattern.exec(css);
+    const hit = pattern.exec(body);
     if (hit) {
-      const line = css.slice(0, hit.index).split("\n").length;
-      failures.push(`styles.css:${line}: ${label}`);
+      failures.push(
+        `${name}: ${label}\n      near: ${JSON.stringify(
+          body.slice(Math.max(0, hit.index - 50), hit.index + 50),
+        )}`,
+      );
     }
   }
 }

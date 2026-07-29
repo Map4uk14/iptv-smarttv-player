@@ -69,6 +69,13 @@ export default defineConfig(({ mode }) => ({
     // lower async/await below ES2017, and this app is async throughout.
     // The reference TV rejects arrow functions outright, so ES5 is the ceiling.
     target: "es2017",
+    // CSS needs its own target, and without it the minifier assumes a modern
+    // browser and *rewrites* declarations into newer equivalents. It collapsed
+    // `top/right/bottom/left: 0` back into `inset: 0` — undoing the fix for the
+    // very bug it was written for, in a stylesheet that was correct at source.
+    // On the TV that shipped `.video-host` at 0x0: sound, no picture.
+    // It will also fold rgba() into #RRGGBBAA (Chromium 62) given the chance.
+    cssTarget: "chrome38",
     outDir: "dist",
     emptyOutDir: true,
     assetsInlineLimit: 0,
