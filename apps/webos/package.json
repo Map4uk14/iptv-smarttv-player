@@ -16,11 +16,13 @@
     "deploy": "npm run package && npm run install-tv && npm run launch-tv"
   },
   "dependencies": {
+    "pako": "^3.0.1",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
     "@babel/preset-env": "^7.29.7",
+    "@types/pako": "^2.0.4",
     "@vitejs/plugin-legacy": "^6.1.1",
     "@webos-tools/cli": "^3.2.5",
     "acorn": "^8.18.0",

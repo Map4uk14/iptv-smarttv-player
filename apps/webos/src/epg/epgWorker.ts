@@ -6,11 +6,27 @@
  * seconds of frozen remote input — the exact behaviour that makes competing
  * apps feel broken.
  *
- * The gzip is inflated with `DecompressionStream` where available so the
- * decompressed XML never exists as a single buffer. Chunks are handed to the
- * streaming parser as they arrive and discarded immediately.
+ * Everything here is written for a 2014 engine, which rules out the obvious
+ * implementation:
+ *
+ *   fetch + ReadableStream   Chromium 42 / 43 — absent, and the polyfill on the
+ *                            main thread does not reach a worker's own global
+ *   DecompressionStream      Chromium 80 — absent
+ *   async / await            transpiles to ES5 only via regenerator; avoided
+ *                            entirely so the inlined worker stays small
+ *
+ * So: XMLHttpRequest (which has been in workers forever and reports progress),
+ * pako for the inflate, and plain callbacks.
+ *
+ * The important property is preserved — the decompressed XML never exists as a
+ * single buffer. pako emits chunks as it inflates and each one is parsed and
+ * discarded. Only the compressed download (~30 MB) is held whole.
  */
 
+import "core-js/stable";
+import { Inflate } from "pako";
+
+import { Utf8StreamDecoder } from "../../../../packages/core/src/epg/utf8.ts";
 import { XmltvStreamParser } from "../../../../packages/core/src/epg/parseXmltv.ts";
 import { EpgIndexBuilder, type ChannelSchedule } from "../../../../packages/core/src/epg/schedule.ts";
 
@@ -34,91 +50,169 @@ export interface EpgDoneStats {
 
 const PROGRESS_INTERVAL_MS = 250;
 
+/**
+ * Compressed bytes pushed into the inflater per turn.
+ *
+ * Small enough that each pass yields quickly and progress keeps moving, large
+ * enough not to pay per-call overhead 30,000 times.
+ */
+const INFLATE_SLICE = 1 << 20; // 1 MiB
+
 self.onmessage = (event: MessageEvent<EpgRequest>) => {
-  void run(event.data);
+  run(event.data);
 };
 
-async function run(request: EpgRequest): Promise<void> {
+function run(request: EpgRequest): void {
   const started = Date.now();
-  try {
-    const response = await fetch(request.url);
-    if (!response.ok) throw new Error(`EPG request failed: HTTP ${response.status}`);
-    if (!response.body) throw new Error("EPG response has no readable body");
 
-    const builder = new EpgIndexBuilder();
-    const filter = new Set(request.channelIds);
-    const parserOptions: ConstructorParameters<typeof XmltvStreamParser>[0] = {
-      onProgramme: (programme) => builder.add(programme),
-    };
-    // Assigned conditionally rather than set to undefined: with
-    // exactOptionalPropertyTypes an explicit undefined is not the same as
-    // omitting the key, and an empty filter must mean "keep everything".
-    if (filter.size > 0) parserOptions.channelFilter = filter;
-    const parser = new XmltvStreamParser(parserOptions);
-
-    let bytes = 0;
-    let lastProgress = 0;
-
-    // The DOM lib types DecompressionStream/TextDecoderStream writable sides as
-    // BufferSource, which does not unify with ReadableStream<Uint8Array>. The
-    // runtime pairing is correct; only the declarations disagree.
-    const stream = decompressed(response.body, request.url);
-    const reader = (stream as ReadableStream<Uint8Array>)
-      .pipeThrough(new TextDecoderStream() as unknown as ReadableWritablePair<string, Uint8Array>)
-      .getReader();
-
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        bytes += value.length;
-        parser.write(value);
+  download(
+    request.url,
+    (buffer) => {
+      try {
+        index(buffer, request, started);
+      } catch (error) {
+        fail(error);
       }
-      const now = Date.now();
-      if (now - lastProgress > PROGRESS_INTERVAL_MS) {
-        lastProgress = now;
-        post({ type: "progress", bytes, programmes: parser.stats.programmesKept });
-      }
+    },
+    fail,
+  );
+}
+
+function index(buffer: ArrayBuffer, request: EpgRequest, started: number): void {
+  const builder = new EpgIndexBuilder();
+
+  const filter = new Set<string>();
+  // Built by loop rather than `new Set(array)`: the iterable constructor is not
+  // dependable on the oldest engines this has to run on.
+  for (let i = 0; i < request.channelIds.length; i++) filter.add(request.channelIds[i]!);
+
+  const parserOptions: ConstructorParameters<typeof XmltvStreamParser>[0] = {
+    onProgramme: (programme) => builder.add(programme),
+  };
+  // Assigned conditionally rather than set to undefined: with
+  // exactOptionalPropertyTypes an explicit undefined is not the same as
+  // omitting the key, and an empty filter must mean "keep everything".
+  if (filter.size > 0) parserOptions.channelFilter = filter;
+  const parser = new XmltvStreamParser(parserOptions);
+
+  let bytes = 0;
+  let lastProgress = 0;
+  const tick = (): void => {
+    const now = Date.now();
+    if (now - lastProgress > PROGRESS_INTERVAL_MS) {
+      lastProgress = now;
+      post({ type: "progress", bytes, programmes: parser.stats.programmesKept });
     }
-    parser.end();
+  };
 
-    const schedules = builder.build();
-    post({
-      type: "done",
-      schedules,
-      stats: {
-        programmesSeen: parser.stats.programmesSeen,
-        programmesKept: parser.stats.programmesKept,
-        channelsIndexed: schedules.size,
-        elapsedMs: Date.now() - started,
-      },
-    });
-  } catch (error) {
-    post({ type: "error", message: error instanceof Error ? error.message : String(error) });
+  const source = new Uint8Array(buffer);
+  const decoder = makeDecoder();
+
+  const feed = (chunk: Uint8Array): void => {
+    const text = decoder.decode(chunk);
+    if (text.length === 0) return;
+    bytes += text.length;
+    parser.write(text);
+    tick();
+  };
+
+  if (isGzip(source)) {
+    // pako emits bytes, not text: `to: "string"` was removed in pako 2.0. So a
+    // character can and does straddle two inflate chunks, which is what the
+    // decoder above is for.
+    const inflater = new Inflate();
+    inflater.onData = (chunk: unknown) => feed(chunk as Uint8Array);
+
+    for (let offset = 0; offset < source.length; offset += INFLATE_SLICE) {
+      const end = Math.min(offset + INFLATE_SLICE, source.length);
+      inflater.push(source.subarray(offset, end), end >= source.length);
+      if (inflater.err) throw new Error(`could not inflate the EPG: ${inflater.msg}`);
+    }
+  } else {
+    // Not compressed. Sliced for the same reason — one 286 MB string is not
+    // something this device can hold.
+    for (let offset = 0; offset < source.length; offset += INFLATE_SLICE) {
+      feed(source.subarray(offset, Math.min(offset + INFLATE_SLICE, source.length)));
+    }
   }
+
+  const trailing = decoder.end();
+  if (trailing.length > 0) parser.write(trailing);
+  parser.end();
+
+  const schedules = builder.build();
+  post({
+    type: "done",
+    schedules,
+    stats: {
+      programmesSeen: parser.stats.programmesSeen,
+      programmesKept: parser.stats.programmesKept,
+      channelsIndexed: schedules.size,
+      elapsedMs: Date.now() - started,
+    },
+  });
 }
 
 /**
- * Inflate the response when it is gzipped.
+ * Gzip magic number.
  *
- * The URL ending in `.gz` is a hint, not proof — and this provider serves the
- * EPG as `application/octet-stream`, so Content-Type says nothing either. Some
- * servers also set `Content-Encoding: gzip`, in which case fetch has already
- * inflated it and doing so again would fail. Sniffing the gzip magic bytes
- * would be strictly better; that is a known gap, noted rather than hidden.
+ * The previous version decided by looking for `.gz` in the URL, which was
+ * guesswork: this provider serves the EPG as `application/octet-stream`, so the
+ * Content-Type says nothing, and some servers set `Content-Encoding: gzip` and
+ * hand back already-inflated bytes. The first two bytes are the actual answer.
  */
-function decompressed(body: ReadableStream<Uint8Array>, url: string): ReadableStream<Uint8Array> {
-  const looksGzipped = /\.gz(\?|$)/i.test(url);
-  if (!looksGzipped) return body;
-  if (typeof DecompressionStream === "undefined") {
-    // webOS 4.x (Chromium 53) predates DecompressionStream. Falling back means
-    // the EPG is unavailable there rather than the app crashing; a JS inflate
-    // is the planned fix.
-    throw new Error("This TV cannot decompress gzipped EPG data (DecompressionStream unavailable)");
+function isGzip(bytes: Uint8Array): boolean {
+  return bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
+interface StreamDecoder {
+  decode(bytes: Uint8Array): string;
+  end(): string;
+}
+
+/**
+ * Prefer the platform decoder, fall back to ours.
+ *
+ * TextDecoder is faster and is what the tests treat as the oracle, but it is not
+ * dependable on Chromium 38. Both paths must handle a character split across a
+ * chunk boundary — hence `stream: true`, without which the native path would be
+ * the buggier of the two.
+ */
+function makeDecoder(): StreamDecoder {
+  if (typeof TextDecoder !== "undefined") {
+    const native = new TextDecoder("utf-8");
+    return {
+      decode: (bytes) => native.decode(bytes, { stream: true }),
+      end: () => native.decode(),
+    };
   }
-  return body.pipeThrough(
-    new DecompressionStream("gzip") as unknown as ReadableWritablePair<Uint8Array, Uint8Array>,
-  );
+  return new Utf8StreamDecoder();
+}
+
+function download(
+  url: string,
+  onDone: (buffer: ArrayBuffer) => void,
+  onError: (error: unknown) => void,
+): void {
+  const request = new XMLHttpRequest();
+  request.open("GET", url, true);
+  request.responseType = "arraybuffer";
+  request.onload = () => {
+    if (request.status >= 200 && request.status < 300) {
+      onDone(request.response as ArrayBuffer);
+    } else {
+      onError(new Error(`EPG request failed: HTTP ${request.status}`));
+    }
+  };
+  request.onerror = () => onError(new Error("EPG request failed: network error"));
+  request.onprogress = (event: ProgressEvent) => {
+    post({ type: "progress", bytes: event.loaded, programmes: 0 });
+  };
+  request.send();
+}
+
+function fail(error: unknown): void {
+  post({ type: "error", message: error instanceof Error ? error.message : String(error) });
 }
 
 function post(message: EpgResponse): void {
