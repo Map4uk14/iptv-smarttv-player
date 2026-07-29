@@ -131,8 +131,12 @@ class ChannelBuilder {
  */
 const SLICED_STRING_MIN = 13;
 
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
+// Constructed only where they exist. At module scope an unguarded `new
+// TextEncoder()` would throw on Chromium 38 before anything in this file ran,
+// taking the whole EPG worker with it. See `flatten` for the fallback.
+const hasTextCodec = typeof TextEncoder !== "undefined" && typeof TextDecoder !== "undefined";
+const textEncoder = hasTextCodec ? new TextEncoder() : null;
+const textDecoder = hasTextCodec ? new TextDecoder() : null;
 
 /**
  * Force a flat copy of a string.
@@ -157,7 +161,13 @@ const textDecoder = new TextDecoder();
  *
  * TextEncoder/TextDecoder round-trip was the only method that came out clean in
  * every measurement. It is genuinely a copy (through a byte buffer), portable
- * to both the browser and Node, and available on Chromium 53 (webOS 4.x).
+ * to both the browser and Node.
+ *
+ * The reference TV is Chromium 38, where TextEncoder is not guaranteed, so
+ * there is a fallback: `split("").join("")` builds a fresh string through a
+ * string builder and cannot be a view onto anything. It is the slower path and
+ * only runs where the fast one is missing — never in Node, so the retention
+ * test still exercises the round-trip.
  *
  * The authority on this is the "interned titles do not retain the source
  * buffer" test, not a micro-benchmark. If you change this, run that test with
@@ -165,7 +175,8 @@ const textDecoder = new TextDecoder();
  */
 function flatten(value: string): string {
   if (value.length < SLICED_STRING_MIN) return value;
-  return textDecoder.decode(textEncoder.encode(value));
+  if (textEncoder && textDecoder) return textDecoder.decode(textEncoder.encode(value));
+  return value.split("").join("");
 }
 
 function intern(value: string, table: string[], index: Map<string, number>): number {
