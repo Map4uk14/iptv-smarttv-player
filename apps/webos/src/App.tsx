@@ -36,6 +36,7 @@ import {
   CatchupUnavailableError,
 } from "../../../packages/core/src/catchup/buildUrl.ts";
 
+import { Diagnostics } from "./ui/Diagnostics.tsx";
 import { installRemoteHandler, type RemoteEvent } from "./platform/keys.ts";
 import { WebOSPlayer, type PlaybackStatus } from "./platform/player.ts";
 import { loadSettings, saveSettings, type Settings } from "./platform/storage.ts";
@@ -919,6 +920,10 @@ export function App() {
           change is a reliable way to leak decoder handles on webOS. */}
       <div class="video-host" ref={videoHost} classList={{ active: playingId() !== null }} />
       <div class="scrim" classList={{ active: screen() === "browse" }} />
+
+      {/* Temporary: the TV's console cannot be typed into, so measurements are
+          read off a photograph of the screen instead. Remove once settled. */}
+      <Diagnostics />
 
       <Show when={screen() === "loading"}>
         <div class="centred">
