@@ -7,9 +7,9 @@
  * 1. hls.js must NOT ship. It exists only so the app is testable in a desktop
  *    browser. On webOS it would mean software demux instead of the hardware
  *    pipeline.
- * 2. No syntax newer than ES2017. webOS 4.x runs Chromium 53, where optional
- *    chaining is a *parse* error — the whole bundle fails to load, so this
- *    fails as a blank screen rather than a degraded feature.
+ * 2. The bundle must parse as ES5. The reference TV's engine predates Chromium
+ *    45 and rejects arrow functions, and a parse error kills the entire script
+ *    — it fails as a blank screen, not a degraded feature.
  * 3. Asset paths must be relative. Packaged apps load from file://, where an
  *    absolute /assets/... path silently 404s.
  */
@@ -17,6 +17,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { parse } from "acorn";
 
 const DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const failures = [];
@@ -54,39 +55,30 @@ for (const { name, body } of jsFiles) {
   }
 }
 
-// --- 2. ES2017 ceiling ---------------------------------------------------
+// --- 2. ES5 ceiling ------------------------------------------------------
 //
-// The bundle now carries the stylesheet inlined as a string (the TV loads from
-// file://, where a <link> to a sibling .css is blocked by CORS), so these
-// patterns see CSS as well as JS. The private-field check has to tell `#a1b2c3;`
-// in a declaration from a real `#field =`; see IGNORE below.
-const HEX_COLOUR = /^[0-9a-fA-F]{3,4}$|^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/;
-
-const MODERN_SYNTAX = [
-  [/\?\./g, "optional chaining (?.)"],
-  [/\?\?/g, "nullish coalescing (??)"],
-  [
-    /(^|[^\w$])#([A-Za-z_$][\w$]*)\s*[=(;]/g,
-    "private class fields (#x)",
-    // A CSS colour is only ever 3, 4, 6 or 8 hex digits. A private field named
-    // exactly like one (#abc, #deadbeef) would slip through; that is a better
-    // trade than failing every build because the stylesheet mentions #b9c0cc.
-    (m) => HEX_COLOUR.test(m[2]),
-  ],
-  [/\bBigInt\b|\d+n\b/g, "BigInt literals"],
-  [/\bcatch\s*\{/g, "optional catch binding"],
-  [/\*\*=/g, "exponentiation assignment"],
-];
+// Parse the bundle as ES5 instead of pattern-matching for known-bad syntax.
+//
+// This check used to be a list of regexes for ES2018+ features, and it passed
+// a bundle the TV could not read: the engine turned out to predate Chromium 45
+// and died on `SyntaxError: Unexpected token =>`. Arrow functions were never on
+// the list, because the list was written against the wrong ceiling. An
+// allowlist of forbidden features can only catch what its author already
+// suspected — a parser catches everything, and cannot drift from the target.
+//
+// A parse failure here is not cosmetic. The engine rejects the whole script
+// before any of it runs, so it surfaces on the TV as a black screen with no
+// on-screen error at all.
 for (const { name, body } of jsFiles) {
-  for (const [pattern, label, ignore] of MODERN_SYNTAX) {
-    const hit = [...body.matchAll(pattern)].find((m) => !(ignore && ignore(m)));
-    if (hit) {
-      failures.push(
-        `${name}: contains ${label} — not parseable on Chromium 53 (near: ${JSON.stringify(
-          body.slice(Math.max(0, hit.index - 40), hit.index + 40),
-        )})`,
-      );
-    }
+  try {
+    parse(body, { ecmaVersion: 5, sourceType: "script" });
+  } catch (error) {
+    const at = typeof error.pos === "number" ? error.pos : 0;
+    failures.push(
+      `${name}: not parseable as ES5 — ${error.message}\n      near: ${JSON.stringify(
+        body.slice(Math.max(0, at - 60), at + 60),
+      )}`,
+    );
   }
 }
 
@@ -112,4 +104,4 @@ if (failures.length > 0) {
 }
 
 const totalKb = (jsFiles.reduce((n, f) => n + f.body.length, 0) / 1024).toFixed(1);
-console.log(`Bundle checks passed (${jsFiles.length} js file(s), ${totalKb} kB): no hls.js, ES2017-safe, relative paths.`);
+console.log(`Bundle checks passed (${jsFiles.length} js file(s), ${totalKb} kB): no hls.js, parses as ES5, relative paths.`);
