@@ -107,11 +107,33 @@ before committing to the approach.
 
 Cost: 78 kB → 348 kB (117 kB gzipped), loaded from local storage.
 
+**CSS is bound by the same ceiling, and fails far more quietly.** Unsupported
+syntax is a parse error you cannot miss; an unsupported *declaration* is simply
+dropped, and the only symptom is that the layout is wrong. `inset: 0` (Chromium
+87) was the expensive one: `.video-host` had no width or height of its own, so
+it collapsed to 0×0 and took the `<video>` inside it with it. The channel played
+with correct audio and no picture — which reads as a codec or DRM problem, not a
+stylesheet problem. `gap` (Chromium 84, 19 uses) and one `#RRGGBBAA` colour
+(Chromium 62) were dropped the same way, giving the "crumbled" spacing.
+
+All three are now written in pre-2016 CSS: four longhand offsets, `> * + *`
+margins, `rgba()`. Verified by screenshotting the built app before and after the
+rewrite and confirming the layout is unchanged — margins are ancient and behave
+identically everywhere, so a modern-browser match is a valid proxy for the TV.
+Four containers needed the margin on the element itself instead, because they
+place a bare text node beside an element and `* + *` matches elements only.
+
 **Media** ([streaming/DRM](https://webostv.developer.lge.com/develop/specifications/streaming-protocol-drm), [mediaOption](https://webostv.developer.lge.com/develop/guides/mediaoption-parameter)):
 
 - HLS is supported by the **native pipeline** (hardware decode). Configured by
   encoding a `mediaOption` JSON into the `<source>` `type` attribute:
   `video/mp4;mediaOption=` + `encodeURI(JSON.stringify({mediaTransportType:"HLS", …}))`.
+- **Confirmed on hardware: the winning form is `application/vnd.apple.mpegurl`
+  carrying `mediaOption`, not LG's documented `video/mp4`.** The player tries
+  four `<source>` shapes in order and reports which one played; on the reference
+  TV that is `hls-mime+mediaOption`, the first. The remaining three stay as a
+  fallback for other sets rather than being pruned to the one known-good answer,
+  since no other model has been tested.
 - **Do not use hls.js on-device.** It would force software demux and destroy
   performance. (Keep it only as a desktop-dev fallback.)
 - MPEG-DASH is **not** supported. HLS only.
