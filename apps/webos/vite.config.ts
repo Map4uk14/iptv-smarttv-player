@@ -60,8 +60,12 @@ export default defineConfig(({ mode }) => ({
   // relative. An absolute "/assets/..." path resolves to the filesystem root on
   // the TV and silently 404s — the app boots to a blank screen with no error.
   base: "./",
-  // The EPG worker has to be a classic worker for the same file:// reason as
-  // the main bundle: a module worker is fetched with CORS semantics.
+  // The EPG worker must also be a classic worker (a module worker is a CORS
+  // fetch, which file:// cannot satisfy). Its ES5 lowering happens in
+  // scripts/transpile-es5.mjs, not here: a Vite plugin runs before esbuild's
+  // minifier, which rewrites long strings back into template literals and put
+  // modern syntax straight back in. Post-build is the only place nothing
+  // can undo it.
   worker: { format: "iife" },
   build: {
     // esbuild takes it as far as it can; scripts/transpile-es5.mjs finishes the

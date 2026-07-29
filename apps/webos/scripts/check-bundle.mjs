@@ -69,17 +69,61 @@ for (const { name, body } of jsFiles) {
 // A parse failure here is not cosmetic. The engine rejects the whole script
 // before any of it runs, so it surfaces on the TV as a black screen with no
 // on-screen error at all.
-for (const { name, body } of jsFiles) {
+function checkEs5(label, code) {
   try {
-    parse(body, { ecmaVersion: 5, sourceType: "script" });
+    parse(code, { ecmaVersion: 5, sourceType: "script" });
+    return true;
   } catch (error) {
     const at = typeof error.pos === "number" ? error.pos : 0;
     failures.push(
-      `${name}: not parseable as ES5 — ${error.message}\n      near: ${JSON.stringify(
-        body.slice(Math.max(0, at - 60), at + 60),
+      `${label}: not parseable as ES5 — ${error.message}\n      near: ${JSON.stringify(
+        code.slice(Math.max(0, at - 60), at + 60),
       )}`,
     );
+    return false;
   }
+}
+
+for (const { name, body } of jsFiles) {
+  checkEs5(name, body);
+}
+
+// The EPG worker is inlined as a *string literal* and handed to a Blob, so
+// parsing the bundle says nothing about it — a string is a string whatever it
+// contains. It shipped with a Babel helper carrying a template literal and
+// failed on the TV as `[epg] worker error: Unexpected token =` while every
+// check here stayed green. Pull it back out of the AST and parse it too.
+const WORKER_MARKER = "could not inflate the EPG";
+let workerChecked = false;
+for (const { body } of jsFiles) {
+  let ast;
+  try {
+    ast = parse(body, { ecmaVersion: 2020, sourceType: "script" });
+  } catch {
+    continue; // already reported as not-ES5 above
+  }
+  const stack = [ast];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+    if (node.type === "Literal" && typeof node.value === "string" && node.value.includes(WORKER_MARKER)) {
+      workerChecked = checkEs5("inlined epg worker", node.value) || workerChecked;
+      stack.length = 0;
+      break;
+    }
+    for (const key of Object.keys(node)) {
+      const value = node[key];
+      if (Array.isArray(value)) stack.push(...value);
+      else if (value && typeof value.type === "string") stack.push(value);
+    }
+  }
+}
+if (!workerChecked) {
+  failures.push(
+    "could not find the inlined EPG worker to check it — if the worker was " +
+      "removed or renamed, update WORKER_MARKER; silently skipping it is how " +
+      "it shipped broken last time",
+  );
 }
 
 // --- 3. CSS the TV's engine would drop ----------------------------------
