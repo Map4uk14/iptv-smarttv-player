@@ -10,6 +10,12 @@
 import type { ChannelSchedule } from "../../../../packages/core/src/epg/schedule.ts";
 import type { EpgRequest, EpgResponse, EpgDoneStats } from "./epgWorker.ts";
 import { loadAllSchedules, saveSchedules } from "../platform/storage.ts";
+// Inlined as a blob rather than emitted as a sibling file. Off a file:// origin
+// a worker loaded by URL is rejected outright ("cannot be accessed from origin
+// 'null'"), and the URL Vite generates for it is wrong under an IIFE build
+// anyway — `import.meta.url` resolves to the document, so the assets/ prefix is
+// lost. A blob carries no origin check and no path.
+import EpgWorker from "./epgWorker.ts?worker&inline";
 
 export interface EpgProgress {
   state: "idle" | "loading" | "ready" | "error";
@@ -65,7 +71,23 @@ export class EpgService {
       this.terminate();
       this.onProgress({ state: "loading", programmes: 0 });
 
-      const worker = new Worker(new URL("./epgWorker.ts", import.meta.url), { type: "module" });
+      // Construction can still throw on an old webOS build, so the failure is
+      // reported like any other EPG failure rather than escaping into an
+      // unhandled rejection and leaving the status stuck on "loading".
+      let worker: Worker;
+      try {
+        worker = new EpgWorker();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("[epg] worker unavailable:", message);
+        this.onProgress({
+          state: this.schedules.size > 0 ? "ready" : "error",
+          programmes: this.programmeCount(),
+          message: `guide unavailable: ${message}`,
+        });
+        resolve();
+        return;
+      }
       this.worker = worker;
 
       worker.onmessage = (event: MessageEvent<EpgResponse>) => {
