@@ -78,9 +78,34 @@ crash-prone, and it is where this app wins.
 | 4.x | 2018–19 | 53 |
 | 3.x | 2016–17 | 38 |
 
-**Decision: target webOS 4.x+ (Chromium 53).** Build target `ES2017`, no optional
-chaining/nullish in shipped output, polyfill only what's used. This covers 2018
-sets onward — a large share of installed base — at modest cost.
+**Decision: ship ES5, polyfilled for Chromium 38 (webOS 3.x).**
+
+This was originally "target webOS 4.x+ (Chromium 53), build target `ES2017`",
+picked off the table above as a reasonable share of installed base. The
+reference TV disagreed: it rejected the bundle with `SyntaxError: Unexpected
+token =>`, so its engine predates Chromium 45 — the row below the one that was
+guessed. Its DevTools still show the Timeline/Profiles/Resources tabs, removed
+in Chrome 57, which corroborates it.
+
+Nothing on-screen said so. A parse error kills the whole script before any of
+it runs, so the app installed, launched, and showed a black screen. The lesson
+worth keeping: **the Chromium version was assumed from a release table rather
+than read off the device**, and every layer downstream inherited the mistake —
+including the bundle guard, which enumerated ES2018+ features and so had no
+opinion about arrow functions. It now parses the bundle as ES5 with acorn
+instead of pattern-matching for syntax someone thought to forbid.
+
+esbuild cannot lower this alone: it refuses to transform async/await below
+ES2017, and the app is async throughout. So Vite emits ES2017 and Babel lowers
+the built bundle to ES5 afterwards (`scripts/transpile-es5.mjs`), with
+`core-js/stable` + `regenerator-runtime` + `whatwg-fetch` for the library gaps
+(`fetch` arrived in Chromium 42, `Object.assign` in 45).
+
+Viable only because Solid is used signal-only here — no `createStore`, so no
+`Proxy`, which cannot be polyfilled at any price. Verified against the bundle
+before committing to the approach.
+
+Cost: 78 kB → 348 kB (117 kB gzipped), loaded from local storage.
 
 **Media** ([streaming/DRM](https://webostv.developer.lge.com/develop/specifications/streaming-protocol-drm), [mediaOption](https://webostv.developer.lge.com/develop/guides/mediaoption-parameter)):
 
