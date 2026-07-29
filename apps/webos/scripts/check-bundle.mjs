@@ -55,17 +55,38 @@ for (const { name, body } of jsFiles) {
 }
 
 // --- 2. ES2017 ceiling ---------------------------------------------------
+//
+// The bundle now carries the stylesheet inlined as a string (the TV loads from
+// file://, where a <link> to a sibling .css is blocked by CORS), so these
+// patterns see CSS as well as JS. The private-field check has to tell `#a1b2c3;`
+// in a declaration from a real `#field =`; see IGNORE below.
+const HEX_COLOUR = /^[0-9a-fA-F]{3,4}$|^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/;
+
 const MODERN_SYNTAX = [
-  [/\?\./, "optional chaining (?.)"],
-  [/\?\?/, "nullish coalescing (??)"],
-  [/(^|[^\w$])#[A-Za-z_$][\w$]*\s*[=(;]/, "private class fields (#x)"],
-  [/\bBigInt\b|\d+n\b/, "BigInt literals"],
-  [/\bcatch\s*\{/, "optional catch binding"],
-  [/\*\*=/, "exponentiation assignment"],
+  [/\?\./g, "optional chaining (?.)"],
+  [/\?\?/g, "nullish coalescing (??)"],
+  [
+    /(^|[^\w$])#([A-Za-z_$][\w$]*)\s*[=(;]/g,
+    "private class fields (#x)",
+    // A CSS colour is only ever 3, 4, 6 or 8 hex digits. A private field named
+    // exactly like one (#abc, #deadbeef) would slip through; that is a better
+    // trade than failing every build because the stylesheet mentions #b9c0cc.
+    (m) => HEX_COLOUR.test(m[2]),
+  ],
+  [/\bBigInt\b|\d+n\b/g, "BigInt literals"],
+  [/\bcatch\s*\{/g, "optional catch binding"],
+  [/\*\*=/g, "exponentiation assignment"],
 ];
 for (const { name, body } of jsFiles) {
-  for (const [pattern, label] of MODERN_SYNTAX) {
-    if (pattern.test(body)) failures.push(`${name}: contains ${label} — not parseable on Chromium 53`);
+  for (const [pattern, label, ignore] of MODERN_SYNTAX) {
+    const hit = [...body.matchAll(pattern)].find((m) => !(ignore && ignore(m)));
+    if (hit) {
+      failures.push(
+        `${name}: contains ${label} — not parseable on Chromium 53 (near: ${JSON.stringify(
+          body.slice(Math.max(0, hit.index - 40), hit.index + 40),
+        )})`,
+      );
+    }
   }
 }
 
