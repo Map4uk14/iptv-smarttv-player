@@ -82,7 +82,41 @@ for (const { name, body } of jsFiles) {
   }
 }
 
-// --- 3. relative asset paths --------------------------------------------
+// --- 3. CSS the TV's engine would drop ----------------------------------
+//
+// Unsupported CSS fails quietly — the declaration is skipped and layout is
+// merely wrong, so nothing in the build or the console says a word. `inset: 0`
+// cost an evening: the video element's container collapsed to 0x0 and the
+// channel played with perfect sound and no picture.
+//
+// Unlike the ES5 check above, this is a blocklist and carries that weakness
+// honestly: it only catches what is listed. Each entry is here because it was
+// actually found in this stylesheet, with the Chromium version that introduced
+// it. If layout breaks on the TV and this check is silent, suspect the list
+// before suspecting the CSS.
+const CSS_FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "ui", "styles.css");
+const LEGACY_CSS = [
+  [/^\s*inset:/m, "inset (Chromium 87) — use top/right/bottom/left"],
+  [/^\s*(row-|column-)?gap:/m, "gap in flex (Chromium 84) — use margins"],
+  [/#[0-9a-fA-F]{8}\b/, "8-digit #RRGGBBAA hex (Chromium 62) — use rgba()"],
+  [/display:\s*grid/, "CSS grid (Chromium 57)"],
+  [/position:\s*sticky/, "position: sticky (Chromium 56)"],
+  [/var\(--/, "custom properties (Chromium 49)"],
+  [/aspect-ratio:/, "aspect-ratio (Chromium 88)"],
+  [/:\s*(clamp|min|max)\(/, "clamp()/min()/max() (Chromium 79)"],
+];
+if (existsSync(CSS_FILE)) {
+  const css = readFileSync(CSS_FILE, "utf8");
+  for (const [pattern, label] of LEGACY_CSS) {
+    const hit = pattern.exec(css);
+    if (hit) {
+      const line = css.slice(0, hit.index).split("\n").length;
+      failures.push(`styles.css:${line}: ${label}`);
+    }
+  }
+}
+
+// --- 4. relative asset paths --------------------------------------------
 const html = readFileSync(join(DIST, "index.html"), "utf8");
 for (const match of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
   const url = match[1];
@@ -91,7 +125,7 @@ for (const match of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
   }
 }
 
-// --- 4. required launcher files -----------------------------------------
+// --- 5. required launcher files -----------------------------------------
 for (const required of ["appinfo.json", "icon.png", "largeIcon.png", "index.html"]) {
   if (!existsSync(join(DIST, required))) failures.push(`missing required file: ${required}`);
 }
